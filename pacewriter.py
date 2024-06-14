@@ -3,6 +3,7 @@ import os
 import json
 import xlsxwriter
 import math
+import re
 
 # Creates pace doc if it doesn't exist.
 def paceDocCreation(path):
@@ -17,7 +18,8 @@ def paceDocCreation(path):
             "Bastion Enter", "Fort Enter", "Blind",
             "Stronghold", "Enter End", "Kill Dragon",
             "Bastion Travel", "Bastion Split", "Fort Split",
-            "SH Travel", "SH Split", "End Split", "File Name"]
+            "SH Travel", "SH Split", "End Split", "File Name"
+            "World Name"]
     for i in range(len(titles)):
         worksheet.write(0, i, titles[i], boldBot)
 
@@ -62,10 +64,14 @@ def reachedNetherCheck(data):
         return True
     return False
 
-def rsgCheck(data, rsg):
+def runCheck(data, rsg):
     if rsg and "Speedrun" in data["world_name"]:
-            return True
-    if not rsg and "mcsrranked" in data["world_name"]:
+        return True
+    if not rsg and \
+        (re.search(r"^mcsrranked\s#\d{1,4}$", data["world_name"]) or \
+        (re.search(r"^mcsrranked\s#\w{9}$", data["world_name"]) and data["default_gamemode"] == 0)) and \
+        data["category"] == "ANY" and \
+        data["run_type"] == "random_seed":
         return True
     return False
 
@@ -73,71 +79,74 @@ def rsgCheck(data, rsg):
 def readJson(f, currentRow, rsg):
     j = open(f)
     data = json.load(j)
-    if rsgCheck(data, rsg) and reachedNetherCheck(data):
-        print(f)
-        currentCol = 0
-
-        timeBgs = ['00EEFF', '00DDEE', '00CCDD', '00BBCC', '00AABB', 'FF9999']
-
-        # Write run number. Is xl index - 3.
-        worksheet.write_number(currentRow, currentCol, currentRow - 2)
-        currentCol += 1
-
-        # Write date of run in form dd/mm/yy.
-        worksheet.write(currentRow, 1, data["date"]/1000/60/60/24 + 25569, format1)
-        currentCol += 1
-
-        # Write time of timelines.
-        bastionFound = False
-        fortFirst = False
-        for i in data["timelines"]:
-            if i["name"] not in ["found_villager", "portal_no_1", "nether_travel_blind", "nether_travel_home"]:
-                if i["name"] == "enter_bastion":
-                    bastionFound = True
-                elif i["name"] == "enter_fortress" and not bastionFound:
-                    fortFirst = True
-                if fortFirst and i["name"] in ["enter_fortress", "enter_bastion"]:
-                    if i["igt"]/1000/60/60 < 1:
-                        worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format2Fort)
-                    else:
-                        worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format3Fort)
-                elif i["name"] == "enter_nether":
-                        minute = math.floor(i["igt"]/1000/60) - 1
-                        if minute > 4:
-                            minute = 4
-                        if not rsg:
-                            minute += 1
-                        formatSubX = workbook.add_format({'bg_color': timeBgs[minute], 'num_format': 'mm:ss', 'align': 'right'})
-                        worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, formatSubX)
-                else:
-                    if i["igt"]/1000/60/60 < 1:
-                        worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format2)
-                    else:
-                        worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format3)
-                currentCol += 1
-
-        # Write reset if event not reached.
-        if rsg:
-            msg = "Reset"
-        else:
-            msg = "Forfeit/Loss"
-        for i in range(currentCol, 9):
-            worksheet.write(currentRow, currentCol, msg, format4)
-            currentCol += 1
-
-        # Write splits.
-        worksheet.write(currentRow, currentCol, f'=IFERROR({chr(68).upper()}{currentRow + 1}-{chr(67).upper()}{currentRow + 1}, "Reset")', format5)
-        currentCol += 1
-        for i in range(69, 74):
-            worksheet.write(currentRow, currentCol, f'=IFERROR({chr(i).upper()}{currentRow + 1}-{chr(i-1).upper()}{currentRow + 1}, "Reset")', format2)
-            currentCol += 1
-
-        # Write filename.
-        worksheet.write(currentRow, currentCol, f, format6)
+    if not runCheck(data, rsg) or not reachedNetherCheck(data):
         j.close()
-        return True
+        return False
+    print(f)
+    currentCol = 0
+
+    timeBgs = ['00EEFF', '00DDEE', '00CCDD', '00BBCC', '00AABB', 'FF9999']
+
+    # Write run number. Is xl index - 3.
+    worksheet.write_number(currentRow, currentCol, currentRow - 2)
+    currentCol += 1
+
+    # Write date of run in form dd/mm/yy.
+    worksheet.write(currentRow, 1, data["date"]/1000/60/60/24 + 25569, format1)
+    currentCol += 1
+
+    # Write time of timelines.
+    bastionFound = False
+    fortFirst = False
+    for i in data["timelines"]:
+        if i["name"] in ["found_villager", "portal_no_1", "nether_travel_blind", "nether_travel_home"]:
+            continue
+        if i["name"] == "enter_bastion":
+            bastionFound = True
+        elif i["name"] == "enter_fortress" and not bastionFound:
+            fortFirst = True
+        if fortFirst and i["name"] in ["enter_fortress", "enter_bastion"]:
+            if i["igt"]/1000/60/60 < 1:
+                worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format2Fort)
+            else:
+                worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format3Fort)
+        elif i["name"] == "enter_nether":
+                minute = math.floor(i["igt"]/1000/60) - 1
+                if minute > 4:
+                    minute = 4
+                if not rsg:
+                    minute += 1
+                formatSubX = workbook.add_format({'bg_color': timeBgs[minute], 'num_format': 'mm:ss', 'align': 'right'})
+                worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, formatSubX)
+        else:
+            if i["igt"]/1000/60/60 < 1:
+                worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format2)
+            else:
+                worksheet.write(currentRow, currentCol, i["igt"]/1000/60/60/24, format3)
+        currentCol += 1
+
+    # Write reset if event not reached.
+    if rsg:
+        msg = "Reset"
+    else:
+        msg = "Forfeit/Loss"
+    for i in range(currentCol, 9):
+        worksheet.write(currentRow, currentCol, msg, format4)
+        currentCol += 1
+
+    # Write splits.
+    worksheet.write(currentRow, currentCol, f'=IFERROR({chr(68).upper()}{currentRow + 1}-{chr(67).upper()}{currentRow + 1}, "Reset")', format5)
+    currentCol += 1
+    for i in range(69, 74):
+        worksheet.write(currentRow, currentCol, f'=IFERROR({chr(i).upper()}{currentRow + 1}-{chr(i-1).upper()}{currentRow + 1}, "Reset")', format2)
+        currentCol += 1
+
+    # Write filename.
+    worksheet.write(currentRow, currentCol, f, format6)
+    currentCol += 1
+    worksheet.write(currentRow, currentCol, data["world_name"], format6)
     j.close()
-    return False
+    return True
 
 def appendToDf(df, row):
     df.loc[len(df)] = row
